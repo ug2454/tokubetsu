@@ -39,7 +39,7 @@ A comprehensive web platform for real-time accessibility testing, impairment sim
 
 1. Clone the repository
 ```bash
-git clone [repository-url]
+git clone [[repository-url]](https://github.com/ug2454/tokubetsu.git)
 cd tokubetsu
 ```
 
