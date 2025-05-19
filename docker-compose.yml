@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: tokubetsu
       POSTGRES_PASSWORD: tokubetsu
@@ -27,9 +25,7 @@ services:
       - "8080:8080"
     depends_on:
       - postgres
-    volumes:
-      - ./backend:/app
-    command: go run cmd/server/main.go
+    command: ./main
 
   frontend:
     build:
@@ -41,8 +37,17 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:8080
+      - VITE_API_URL=http://backend:8080
+      - HOST=0.0.0.0
+    depends_on:
+      - backend
     command: npm run dev
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   postgres_data: 

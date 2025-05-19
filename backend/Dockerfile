@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine
+FROM golang:1.23-alpine
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o main ./cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server/main.go
 
 EXPOSE 8080
 

@@ -5,7 +5,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/yourusername/tokubetsu/internal/models"
+	"tokubetsu/internal/models"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -37,6 +38,8 @@ func Connect() {
 		&models.Scan{},
 		&models.AccessibilityIssue{},
 		&models.TeamInvite{},
+		&models.ComplianceReport{},
+		&models.ComplianceViolation{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)

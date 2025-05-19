@@ -10,18 +10,27 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true,
-      },
-    },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      }
+    }
   },
+  build: {
+    commonjsOptions: {
+      transformMixedEsModules: true
+    }
+  },
+  server: {
+    host: true,
+    port: 3000,
+    hmr: {
+      clientPort: 3000,
+      host: 'localhost'
+    },
+    watch: {
+      usePolling: true,
+    }
+  }
 }) 

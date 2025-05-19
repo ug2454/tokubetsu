@@ -1,42 +1,59 @@
 package routes
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/yourusername/tokubetsu/internal/handlers"
-	"github.com/yourusername/tokubetsu/internal/middleware"
+	"tokubetsu/internal/handlers"
+	"tokubetsu/internal/middleware"
+	"tokubetsu/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-func SetupRoutes(app *fiber.App) {
+func SetupRoutes(r *gin.Engine, db *gorm.DB) {
+	// Create handlers
+	projectHandler := handlers.NewProjectHandler(db)
+	scanHandler := handlers.NewScanHandler()
+	complianceHandler := handlers.NewComplianceHandler(db, services.NewScanner())
+
 	// Public routes
-	app.Get("/", handlers.Welcome)
-	app.Post("/api/auth/register", handlers.Register)
-	app.Post("/api/auth/login", handlers.Login)
+	public := r.Group("/api/public")
+	{
+		public.GET("/scan", scanHandler.ScanHandler)
+	}
+
+	// Auth routes
+	auth := r.Group("/api/auth")
+	{
+		auth.POST("/register", handlers.Register)
+		auth.POST("/login", handlers.Login)
+	}
 
 	// Protected routes
-	api := app.Group("/api", middleware.Protected())
+	api := r.Group("/api")
+	api.Use(middleware.AuthMiddleware(db))
+	{
+		// User route
+		api.GET("/user", handlers.GetCurrentUser)
 
-	// User routes
-	api.Get("/user", handlers.GetUser)
-	api.Put("/user", handlers.UpdateUser)
+		// Project routes
+		projects := api.Group("/projects")
+		{
+			projects.GET("", projectHandler.ListProjects)
+			projects.POST("", projectHandler.CreateProject)
+			projects.GET("/:projectId", projectHandler.GetProject)
+			projects.PUT("/:projectId", projectHandler.UpdateProject)
+			projects.DELETE("/:projectId", projectHandler.DeleteProject)
+			projects.POST("/:projectId/scan", projectHandler.RunScan)
 
-	// Project routes
-	projects := api.Group("/projects")
-	projects.Post("/", handlers.CreateProject)
-	projects.Get("/", handlers.ListProjects)
-	projects.Get("/:id", handlers.GetProject)
-	projects.Put("/:id", handlers.UpdateProject)
-	projects.Delete("/:id", handlers.DeleteProject)
+			// Compliance report routes for projects
+			projects.POST("/:projectId/compliance", complianceHandler.GenerateReport)
+			projects.GET("/:projectId/compliance", complianceHandler.GetProjectReports)
+		}
 
-	// Scan routes
-	scans := projects.Group("/:projectId/scans")
-	scans.Post("/", handlers.CreateScan)
-	scans.Get("/", handlers.ListScans)
-	scans.Get("/:id", handlers.GetScan)
-	scans.Delete("/:id", handlers.DeleteScan)
-
-	// Team routes
-	team := projects.Group("/:projectId/team")
-	team.Post("/invite", handlers.InviteTeamMember)
-	team.Put("/invite/:id", handlers.UpdateInvite)
-	team.Delete("/invite/:id", handlers.DeleteInvite)
+		// Compliance report routes
+		compliance := api.Group("/compliance")
+		{
+			compliance.GET("/:reportId", complianceHandler.GetReport)
+		}
+	}
 }

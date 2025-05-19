@@ -1,11 +1,14 @@
 package handlers
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"net/http"
 
-func Welcome(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
+	"github.com/gin-gonic/gin"
+)
+
+func Welcome(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
 		"message": "Welcome to Tokubetsu API",
-		"status":  "success",
 		"version": "1.0.0",
 	})
 }

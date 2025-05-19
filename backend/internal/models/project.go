@@ -1,18 +1,35 @@
 package models
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
 
 type Project struct {
 	Base
-	UserID      uuid.UUID    `json:"user_id" gorm:"type:uuid;not null"`
-	Title       string       `json:"title" gorm:"not null"`
-	URL         string       `json:"url"`
-	Status      string       `json:"status" gorm:"type:varchar(20);default:'active'"`
-	User        User         `json:"user" gorm:"foreignKey:UserID"`
-	Scans       []Scan       `json:"scans,omitempty"`
-	TeamInvites []TeamInvite `json:"team_invites,omitempty"`
+	Title       string    `json:"title" gorm:"not null"`
+	Name        string    `json:"name" gorm:"not null"`
+	Description string    `json:"description"`
+	URL         string    `json:"url"`
+	UserID      uuid.UUID `json:"user_id" gorm:"type:uuid"`
+	LastScan    time.Time `json:"last_scan"`
+	Score       float64   `json:"score"`
+	Status      string    `json:"status" gorm:"type:varchar(20);default:'active'"` // active, archived
+}
+
+type ProjectResponse struct {
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Title       string    `json:"title"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	URL         string    `json:"url"`
+	UserID      uuid.UUID `json:"user_id"`
+	LastScan    time.Time `json:"last_scan"`
+	Score       float64   `json:"score"`
+	Status      string    `json:"status"`
 }
 
 type Scan struct {

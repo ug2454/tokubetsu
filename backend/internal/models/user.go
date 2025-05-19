@@ -1,5 +1,11 @@
 package models
 
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
 type User struct {
 	Base
 	Name     string `json:"name" gorm:"not null"`
@@ -9,8 +15,10 @@ type User struct {
 }
 
 type UserResponse struct {
-	Base
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
 }
