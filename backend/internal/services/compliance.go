@@ -47,10 +47,10 @@ func (s *ComplianceService) GenerateReport(projectID uuid.UUID, url string) (*mo
 		LevelAScore:         0,
 		LevelAAScore:        0,
 		LevelAAAScore:       0,
-		PerceivableScore:    0,
-		OperableScore:       0,
-		UnderstandableScore: 0,
-		RobustScore:         0,
+		PerceivableScore:    100.0,
+		OperableScore:       100.0,
+		UnderstandableScore: 100.0,
+		RobustScore:         100.0,
 	}
 
 	// Count passes for each level/principle
@@ -143,6 +143,13 @@ func (s *ComplianceService) GenerateReport(projectID uuid.UUID, url string) (*mo
 	}
 	if robustPasses+robustViolations > 0 {
 		report.RobustScore = float64(robustPasses) / float64(robustPasses+robustViolations) * 100
+	}
+
+	// Calculate Overall Score as an average of the four principle scores
+	report.OverallScore = (report.PerceivableScore + report.OperableScore + report.UnderstandableScore + report.RobustScore) / 4.0
+	// Ensure OverallScore is not NaN if all principle scores are 0 (e.g. no relevant rules triggered)
+	if report.PerceivableScore == 0 && report.OperableScore == 0 && report.UnderstandableScore == 0 && report.RobustScore == 0 {
+		report.OverallScore = 0 // Or handle as appropriate, e.g. if no rules, score is 100 or N/A
 	}
 
 	return report, nil

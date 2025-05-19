@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -72,6 +74,14 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// Record activity
+	go func() {
+		details := fmt.Sprintf("User '%s' registered.", user.Email)
+		if recordErr := RecordActivity(user.ID, "user_register", "user", nil, details); recordErr != nil {
+			log.Printf("Error recording activity for user registration: %v", recordErr)
+		}
+	}()
+
 	c.JSON(http.StatusCreated, gin.H{
 		"token": t,
 		"user": models.UserResponse{
@@ -124,6 +134,14 @@ func Login(c *gin.Context) {
 		})
 		return
 	}
+
+	// Record activity
+	go func() {
+		details := fmt.Sprintf("User '%s' logged in.", user.Email)
+		if recordErr := RecordActivity(user.ID, "user_login", "user", nil, details); recordErr != nil {
+			log.Printf("Error recording activity for user login: %v", recordErr)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": t,

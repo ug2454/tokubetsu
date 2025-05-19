@@ -1,4 +1,5 @@
 import api from './api';
+import { ComplianceReportItem } from '../types/compliance';
 
 export interface ComplianceRule {
   id: string;
@@ -73,6 +74,23 @@ function toCamelCaseReport(report: any): ComplianceReport {
 }
 
 export const complianceService = {
+  async getProjectComplianceReports(projectId: string): Promise<ComplianceReportItem[]> {
+    const response = await api.get(`/api/projects/${projectId}/compliance`);
+    return response.data;
+  },
+
+  async generateComplianceReport(projectId: string): Promise<ComplianceReportItem> {
+    // This likely should have a different response type or handle it appropriately
+    // if the backend returns something specific upon generation (e.g., the new report or a job ID)
+    const response = await api.post(`/api/projects/${projectId}/compliance`);
+    return response.data;
+  },
+
+  async getComplianceReportDetails(reportId: string): Promise<ComplianceReportItem> {
+    const response = await api.get(`/api/compliance/${reportId}`);
+    return response.data;
+  },
+
   async generateReport(projectId: string): Promise<ComplianceReport> {
     const response = await api.post(`/api/projects/${projectId}/compliance`);
     return toCamelCaseReport(response.data);

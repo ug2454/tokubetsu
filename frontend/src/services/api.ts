@@ -60,4 +60,24 @@ api.interceptors.response.use(
   }
 );
 
+export const getActivityLog = async (params?: { page?: number; limit?: number; type?: string; projectId?: string }) => {
+  try {
+    const response = await api.get('/api/activity', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching activity log:', error);
+    throw error;
+  }
+};
+
+export const getScans = async (params?: { page?: number; limit?: number; projectId?: string }) => {
+  try {
+    const response = await api.get('/api/scans', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching scans:', error);
+    throw error;
+  }
+};
+
 export default api; 

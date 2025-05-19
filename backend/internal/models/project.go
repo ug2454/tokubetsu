@@ -36,10 +36,12 @@ type Scan struct {
 	Base
 	ProjectID  uuid.UUID              `json:"project_id" gorm:"type:uuid;not null"`
 	ScanType   string                 `json:"scan_type" gorm:"type:varchar(20);not null"`
-	ResultJSON map[string]interface{} `json:"result_json" gorm:"type:jsonb"`
-	Summary    string                 `json:"summary"`
+	Status     string                 `json:"status" gorm:"type:varchar(20);default:'pending'"`
+	Score      float64                `json:"score,omitempty"`
+	ResultJSON map[string]interface{} `json:"result_json,omitempty" gorm:"type:jsonb"`
+	Summary    string                 `json:"summary,omitempty"`
 	Project    Project                `json:"-" gorm:"foreignKey:ProjectID"`
-	Issues     []AccessibilityIssue   `json:"issues,omitempty"`
+	Issues     []AccessibilityIssue   `json:"issues,omitempty" gorm:"foreignKey:ScanID"`
 }
 
 type AccessibilityIssue struct {

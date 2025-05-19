@@ -35,6 +35,12 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 		// User route
 		api.GET("/user", handlers.GetCurrentUser)
 
+		// Scan routes
+		api.GET("/scans", handlers.ListScans)
+
+		// Activity Log routes
+		api.GET("/activity", handlers.ListActivityLogs)
+
 		// Project routes
 		projects := api.Group("/projects")
 		{

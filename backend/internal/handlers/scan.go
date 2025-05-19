@@ -3,10 +3,16 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
+	"strconv"
+	"time"
+	"tokubetsu/internal/database"
+	"tokubetsu/internal/models"
 	"tokubetsu/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type ScanHandler struct {
@@ -109,10 +115,78 @@ func CreateScan(c *gin.Context) {
 	})
 }
 
+// ScanResponse is a tailored response for individual scan items in a list.
+// It includes ProjectName for convenience.
+type ScanResponse struct {
+	ID          uuid.UUID `json:"id"`
+	ProjectID   uuid.UUID `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+	ScanType    string    `json:"scan_type"`
+	Status      string    `json:"status"`
+	Score       float64   `json:"score,omitempty"`
+	IssuesCount int       `json:"issues_count"`
+	Timestamp   time.Time `json:"timestamp"` // This will be Scan.CreatedAt
+	Summary     string    `json:"summary,omitempty"`
+}
+
+// ListScans godoc
+// @Summary List recent scans
+// @Description Get a paginated list of recent scans across all projects for the authenticated user, or for a specific project if projectId is provided.
+// @Tags scans
+// @Produce json
+// @Param projectId query string false "Optional: Filter by Project ID"
+// @Param page query int false "Page number (default: 1)"
+// @Param limit query int false "Items per page (default: 10)"
+// @Success 200 {array} ScanResponse
+// @Failure 400 {object} gin.H "Invalid query parameters"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /api/scans [get]
+// @Security BearerAuth
 func ListScans(c *gin.Context) {
-	c.JSON(501, gin.H{
-		"message": "Scan listing not implemented yet",
-	})
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	offset := (page - 1) * limit
+
+	var scans []models.Scan
+	query := database.DB.Model(&models.Scan{}).Joins("JOIN projects ON projects.id = scans.project_id AND projects.user_id = ?", userID.(uuid.UUID))
+
+	projectIDStr := c.Query("projectId")
+	if projectIDStr != "" {
+		projectID, err := uuid.Parse(projectIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project ID format"})
+			return
+		}
+		query = query.Where("scans.project_id = ?", projectID)
+	}
+
+	if err := query.Order("scans.created_at DESC").Limit(limit).Offset(offset).Preload("Project").Preload("Issues").Find(&scans).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not fetch scans"})
+		return
+	}
+
+	var responses []ScanResponse
+	for _, scan := range scans {
+		responses = append(responses, ScanResponse{
+			ID:          scan.ID,
+			ProjectID:   scan.ProjectID,
+			ProjectName: scan.Project.Title, // Assuming Project is preloaded and Project.Title exists
+			ScanType:    scan.ScanType,
+			Status:      scan.Status,
+			Score:       scan.Score,
+			IssuesCount: len(scan.Issues), // Assuming Issues are preloaded
+			Timestamp:   scan.CreatedAt,
+			Summary:     scan.Summary,
+		})
+	}
+
+	c.JSON(http.StatusOK, responses)
 }
 
 func GetScan(c *gin.Context) {

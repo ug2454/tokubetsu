@@ -40,6 +40,7 @@ func Connect() {
 		&models.TeamInvite{},
 		&models.ComplianceReport{},
 		&models.ComplianceViolation{},
+		&models.ActivityLog{},
 	)
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
