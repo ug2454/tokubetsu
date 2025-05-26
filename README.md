@@ -4,19 +4,18 @@ A comprehensive web platform for real-time accessibility testing, impairment sim
 
 ## 🚀 Features
 
-- Live Accessibility Scanner
-- Impairment Simulators
-- Screen Reader Preview Mode
-- Test Lab Mode
-- Learning Hub
-- Browser/IDE/Figma Integrations
+- ✅ Run real-time accessibility scans (powered by axe-core)
+- 🎨 Simulate disabilities like color blindness, low vision, and dyslexia
+- 📋 Get actionable WCAG-based fix suggestions
+- 📊Dedicated Analytics Page: Dive deep into your accessibility data with a brand-new, standalone Analytics page.
+- 📁 Export reports to share with your team or clients
+
 
 ## 🛠 Tech Stack
 
 - Frontend: React + TypeScript
 - Backend: Go
 - Database: PostgreSQL
-- Testing: Jest, React Testing Library, Go tests
 
 ## 📦 Prerequisites
 
