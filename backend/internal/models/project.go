@@ -34,25 +34,25 @@ type ProjectResponse struct {
 
 type Scan struct {
 	Base
-	ProjectID  uuid.UUID              `json:"project_id" gorm:"type:uuid;not null"`
-	ScanType   string                 `json:"scan_type" gorm:"type:varchar(20);not null"`
-	Status     string                 `json:"status" gorm:"type:varchar(20);default:'pending'"`
-	Score      float64                `json:"score,omitempty"`
-	ResultJSON map[string]interface{} `json:"result_json,omitempty" gorm:"type:jsonb"`
-	Summary    string                 `json:"summary,omitempty"`
-	Project    Project                `json:"-" gorm:"foreignKey:ProjectID"`
-	Issues     []AccessibilityIssue   `json:"issues,omitempty" gorm:"foreignKey:ScanID"`
+	ProjectID  uuid.UUID            `json:"project_id" gorm:"type:uuid;not null"`
+	ScanType   string               `json:"scan_type" gorm:"type:varchar(20);not null"`
+	Status     string               `json:"status" gorm:"type:varchar(20);default:'pending'"`
+	Score      float64              `json:"score,omitempty"`
+	ResultJSON *string              `json:"result_json,omitempty" gorm:"type:jsonb"`
+	Summary    string               `json:"summary,omitempty"`
+	Project    Project              `json:"-" gorm:"foreignKey:ProjectID"`
+	Issues     []AccessibilityIssue `json:"issues,omitempty" gorm:"foreignKey:ScanID"`
 }
 
 type AccessibilityIssue struct {
 	Base
-	ScanID           uuid.UUID              `json:"scan_id" gorm:"type:uuid;not null"`
-	Severity         string                 `json:"severity" gorm:"type:varchar(20);not null"`
-	Description      string                 `json:"description" gorm:"not null"`
-	HTMLSnippet      string                 `json:"html_snippet"`
-	FixSuggestion    string                 `json:"fix_suggestion"`
-	SimulatorEffects map[string]interface{} `json:"simulator_effects" gorm:"type:jsonb"`
-	Scan             Scan                   `json:"-" gorm:"foreignKey:ScanID"`
+	ScanID           uuid.UUID `json:"scan_id" gorm:"type:uuid;not null"`
+	Severity         string    `json:"severity" gorm:"type:varchar(20);not null"`
+	Description      string    `json:"description" gorm:"not null"`
+	HTMLSnippet      string    `json:"html_snippet"`
+	FixSuggestion    string    `json:"fix_suggestion"`
+	SimulatorEffects string    `json:"simulator_effects" gorm:"type:jsonb"`
+	Scan             Scan      `json:"-" gorm:"foreignKey:ScanID"`
 }
 
 type TeamInvite struct {

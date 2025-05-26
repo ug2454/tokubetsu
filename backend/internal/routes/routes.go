@@ -14,6 +14,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	projectHandler := handlers.NewProjectHandler(db)
 	scanHandler := handlers.NewScanHandler()
 	complianceHandler := handlers.NewComplianceHandler(db, services.NewScanner())
+	analyticsHandler := handlers.NewAnalyticsHandler()
 
 	// Public routes
 	public := r.Group("/api/public")
@@ -34,6 +35,9 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	{
 		// User route
 		api.GET("/user", handlers.GetCurrentUser)
+
+		// Analytics routes
+		api.GET("/analytics", analyticsHandler.GetAnalytics)
 
 		// Scan routes
 		api.GET("/scans", handlers.ListScans)

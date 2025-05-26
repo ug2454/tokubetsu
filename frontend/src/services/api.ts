@@ -50,10 +50,11 @@ api.interceptors.response.use(
       
       // Don't clear token for login/register endpoints
       if (!error.config?.url?.includes('/auth/')) {
-        console.log('Clearing token and redirecting to login');
+        console.log('Clearing token due to 401 error');
         localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/auth/login';
+        // Don't automatically redirect - let AuthContext handle it
+        // This prevents unwanted logouts on page refresh
+        console.log('Token cleared, AuthContext will handle redirect');
       }
     }
     return Promise.reject(error);

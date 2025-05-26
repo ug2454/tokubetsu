@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"tokubetsu/internal/models"
+	"tokubetsu/internal/services"
 
 	"fmt"
 	"log"
@@ -237,6 +239,28 @@ func (h *ProjectHandler) RunScan(c *gin.Context) {
 
 	log.Printf("Found project: %+v", project)
 
+	// Validate project URL
+	if project.URL == "" {
+		log.Printf("Error: Project has no URL to scan")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "project URL is required for scanning"})
+		return
+	}
+
+	// Create initial scan record with "pending" status
+	scan := models.Scan{
+		ProjectID: projectID,
+		ScanType:  "accessibility",
+		Status:    "pending",
+	}
+
+	if err := h.db.Create(&scan).Error; err != nil {
+		log.Printf("Failed to create scan record: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create scan record"})
+		return
+	}
+
+	log.Printf("Created scan record with ID: %s", scan.ID)
+
 	// Update the last scan time
 	project.LastScan = time.Now()
 	if err := h.db.Save(&project).Error; err != nil {
@@ -247,7 +271,7 @@ func (h *ProjectHandler) RunScan(c *gin.Context) {
 
 	log.Printf("Successfully updated project scan time")
 
-	// Record activity
+	// Record activity for scan initiation
 	go func() {
 		details := fmt.Sprintf("Scan initiated for project '%s'.", project.Title)
 		err := RecordActivity(userID, "initiated_scan", "scan", &project.ID, details)
@@ -256,9 +280,123 @@ func (h *ProjectHandler) RunScan(c *gin.Context) {
 		}
 	}()
 
+	// Perform the actual scan in a separate goroutine
+	go func() {
+		log.Printf("Starting accessibility scan for URL: %s", project.URL)
+
+		// Update scan status to "in_progress"
+		scan.Status = "in_progress"
+		if err := h.db.Save(&scan).Error; err != nil {
+			log.Printf("Failed to update scan status to in_progress: %v", err)
+			return
+		}
+
+		// Create scanner instance
+		scanner := services.NewScanner()
+
+		// Perform the scan
+		result, err := scanner.ScanURL(project.URL)
+		if err != nil {
+			log.Printf("Error performing scan: %v", err)
+
+			// Update scan status to "failed"
+			scan.Status = "failed"
+			scan.Summary = fmt.Sprintf("Scan failed: %v", err)
+			if err := h.db.Save(&scan).Error; err != nil {
+				log.Printf("Failed to update scan status to failed: %v", err)
+			}
+
+			// Record activity for scan failure
+			details := fmt.Sprintf("Scan failed for project '%s': %v", project.Title, err)
+			err = RecordActivity(userID, "scan_failed", "scan", &project.ID, details)
+			if err != nil {
+				log.Printf("Error recording activity for scan failure: %v", err)
+			}
+			return
+		}
+
+		// Calculate score
+		totalChecks := len(result.Passes) + len(result.Violations)
+		var score float64
+		if totalChecks > 0 {
+			score = float64(len(result.Passes)) / float64(totalChecks) * 100
+		}
+
+		log.Printf("Scan completed with score: %.2f", score)
+
+		// Update scan with results
+		scan.Status = "completed"
+		scan.Score = score
+		scan.Summary = fmt.Sprintf("Found %d violations and %d passes", len(result.Violations), len(result.Passes))
+
+		// Store result as JSON
+		resultJSON, err := json.Marshal(result)
+		if err != nil {
+			log.Printf("Failed to marshal scan result to JSON: %v", err)
+			return
+		}
+		resultJSONStr := string(resultJSON)
+		scan.ResultJSON = &resultJSONStr
+
+		if err := h.db.Save(&scan).Error; err != nil {
+			log.Printf("Failed to update scan with results: %v", err)
+			return
+		}
+
+		// Create accessibility issues from violations
+		for _, violation := range result.Violations {
+			// Determine severity based on impact
+			severity := "medium"
+			switch violation.Impact {
+			case "critical":
+				severity = "critical"
+			case "serious":
+				severity = "high"
+			case "moderate":
+				severity = "medium"
+			case "minor":
+				severity = "low"
+			}
+
+			// Get first node if available
+			htmlSnippet := "No element specified"
+			if len(violation.Nodes) > 0 {
+				htmlSnippet = violation.Nodes[0]
+			}
+
+			issue := models.AccessibilityIssue{
+				ScanID:        scan.ID,
+				Severity:      severity,
+				Description:   violation.Description,
+				HTMLSnippet:   htmlSnippet,
+				FixSuggestion: violation.Help,
+			}
+
+			if err := h.db.Create(&issue).Error; err != nil {
+				log.Printf("Failed to create accessibility issue: %v", err)
+			}
+		}
+
+		// Update project score with the latest scan score
+		project.Score = score
+		if err := h.db.Save(&project).Error; err != nil {
+			log.Printf("Failed to update project score: %v", err)
+		}
+
+		// Record activity for scan completion
+		details := fmt.Sprintf("Scan completed for project '%s' with score %.2f%%", project.Title, score)
+		err = RecordActivity(userID, "scan_completed", "scan", &project.ID, details)
+		if err != nil {
+			log.Printf("Error recording activity for scan completion: %v", err)
+		}
+
+		log.Printf("Scan process completed successfully")
+	}()
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "scan initiated",
-		"score":   project.Score, // This score is likely the project's overall score, not this specific scan's score yet.
+		"scan_id": scan.ID,
+		"status":  scan.Status,
 	})
 }
 

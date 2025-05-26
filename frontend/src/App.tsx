@@ -4,6 +4,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { AuthProvider } from './contexts/AuthContext';
 import AppRoutes from './routes';
+import ScrollRestoration from './components/ScrollRestoration';
 import ReactDOM from 'react-dom';
 import axe from '@axe-core/react';
 
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   return (
     <React.StrictMode>
       <Router>
+        <ScrollRestoration />
         <ThemeProvider>
           <SettingsProvider>
             <AuthProvider>

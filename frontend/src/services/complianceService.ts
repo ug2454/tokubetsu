@@ -61,7 +61,7 @@ function toCamelCaseReport(report: any): ComplianceReport {
     operableScore: report.operable_score,
     understandableScore: report.understandable_score,
     robustScore: report.robust_score,
-    violations: report.violations.map((v: any) => ({
+    violations: (report.violations || []).map((v: any) => ({
       ruleId: v.rule_id,
       wcagLevel: v.wcag_level,
       criterion: v.criterion,

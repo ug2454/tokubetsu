@@ -56,6 +56,12 @@ func (h *ComplianceHandler) GenerateReport(c *gin.Context) {
 		return
 	}
 
+	// Preload violations for the response
+	if err := h.db.Preload("Violations").First(&report, report.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load report violations"})
+		return
+	}
+
 	c.JSON(http.StatusOK, report)
 }
 
@@ -83,6 +89,7 @@ func (h *ComplianceHandler) GetProjectReports(c *gin.Context) {
 	// Get all reports for the project
 	var reports []models.ComplianceReport
 	if err := h.db.Where("project_id = ?", projectID).
+		Preload("Violations").
 		Order("generated_at DESC").
 		Find(&reports).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch reports"})
@@ -109,6 +116,7 @@ func (h *ComplianceHandler) GetReport(c *gin.Context) {
 	// Get report with project ownership verification
 	var report models.ComplianceReport
 	if err := h.db.Joins("Project").
+		Preload("Violations").
 		Where("compliance_reports.id = ? AND Project.user_id = ?", reportID, userID).
 		First(&report).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})

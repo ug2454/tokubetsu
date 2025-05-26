@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Grid,
@@ -54,36 +54,10 @@ import { complianceService } from '../services/complianceService';
 import { ScanResults } from '../components/ScanResults';
 import { scannerService, ScanResult } from '../services/scannerService';
 
-interface DashboardStats {
-  totalProjects: number;
-  activeProjects: number;
-  completedScans: number;
-  issuesDetected: number;
-}
-
-// REMOVED: Old ScanResult interface definition
-/*
-interface ScanResult {
-  id: string;
-  projectId: string;
-  projectName: string;
-  timestamp: string;
-  score: number;
-  issues: number;
-  status: 'completed' | 'failed' | 'in_progress';
-}
-*/
-
 const COLORS = ['#4caf50', '#f44336', '#ff9800', '#2196f3'];
 
 const Dashboard: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [stats, setStats] = useState<DashboardStats>({
-    totalProjects: 0,
-    activeProjects: 0, 
-    completedScans: 0,
-    issuesDetected: 0
-  });
   const [loading, setLoading] = useState(true);
   const [activityLog, setActivityLog] = useState<ActivityLogItem[]>([]);
   const [recentScans, setRecentScans] = useState<ScanDashboardItem[]>([]);
@@ -95,32 +69,15 @@ const Dashboard: React.FC = () => {
   const [complianceReportsError, setComplianceReportsError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const location = useLocation();
 
   // State for the new scan results dialog
   const [currentScanResultForDialog, setCurrentScanResultForDialog] = useState<ScanResult | null>(null);
   const [isScanResultDialogOpen, setIsScanResultDialogOpen] = useState(false);
   const [scanDetailLoading, setScanDetailLoading] = useState(false);
 
-  // REMOVED: generateMockScanData function
-  /*
-  const generateMockScanData = useCallback(() => {
-    const mockScans: ScanResult[] = [];
-    const statuses: ('completed' | 'failed' | 'in_progress')[] = ['completed', 'completed', 'failed', 'in_progress'];
-    
-    for (let i = 0; i < 3; i++) {
-      mockScans.push({
-        id: `scan-${i}`,
-        projectId: `project-${i}`,
-        projectName: `Project ${i + 1}`,
-        timestamp: new Date(Date.now() - i * 12 * 60 * 60 * 1000).toISOString(),
-        score: Math.floor(Math.random() * 100),
-        issues: Math.floor(Math.random() * 25),
-        status: statuses[i % statuses.length]
-      });
-    }
-    return mockScans;
-  }, []);
-  */
+  // Add state for last refresh time
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -137,25 +94,61 @@ const Dashboard: React.FC = () => {
       const completedScansCount = scansData.filter((scan: ScanDashboardItem) => scan.status === 'completed').length;
       const issuesDetectedCount = scansData.reduce((sum: number, scan: ScanDashboardItem) => sum + (scan.issues_count || 0), 0);
 
-      setStats({
-        totalProjects: projectsData.length,
-        activeProjects: projectsData.filter((p: Project) => p.status === 'active').length,
-        completedScans: completedScansCount,
-        issuesDetected: issuesDetectedCount,
-      });
-
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       setActivityLog([]);
       setRecentScans([]); // Ensure scans are also cleared on error
     } finally {
       setLoading(false);
+      setLastRefreshTime(new Date());
     }
   }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Refresh data when returning to dashboard from other pages
+  useEffect(() => {
+    if (location.pathname === '/') {
+      console.log('Returned to dashboard, refreshing data...');
+      fetchData();
+    }
+  }, [location.pathname, fetchData]);
+
+  // Also refresh data when tab becomes visible (user returns from another tab/window)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && location.pathname === '/') {
+        console.log('Dashboard tab became visible, refreshing data...');
+        fetchData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [location.pathname, fetchData]);
+
+  // Periodic refresh to catch scans completed from other sources
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (location.pathname === '/') {
+      intervalId = setInterval(() => {
+        console.log('Periodic refresh of dashboard data...');
+        fetchData();
+      }, 30000); // Refresh every 30 seconds when on dashboard
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [location.pathname, fetchData]);
 
   const refreshData = useCallback(async () => {
     setLoading(true);
@@ -172,13 +165,6 @@ const Dashboard: React.FC = () => {
       const completedScansCount = scansData.filter((scan: ScanDashboardItem) => scan.status === 'completed').length;
       const issuesDetectedCount = scansData.reduce((sum: number, scan: ScanDashboardItem) => sum + (scan.issues_count || 0), 0);
 
-      setStats({
-        totalProjects: projectsData.length,
-        activeProjects: projectsData.filter((p: Project) => p.status === 'active').length,
-        completedScans: completedScansCount,
-        issuesDetected: issuesDetectedCount,
-      });
-
     } catch (error) {
       console.error('Error refreshing dashboard data:', error);
       setActivityLog([]);
@@ -186,21 +172,6 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     }
   }, [fetchData]);
-
-  const projectStatusData = [
-    { name: 'Active', value: stats.activeProjects },
-    { name: 'Inactive', value: stats.totalProjects - stats.activeProjects },
-  ];
-
-  const scanHistoryData = [
-    { date: '6 days ago', scans: 3, issues: 7 },
-    { date: '5 days ago', scans: 5, issues: 12 },
-    { date: '4 days ago', scans: 2, issues: 5 },
-    { date: '3 days ago', scans: 8, issues: 18 },
-    { date: '2 days ago', scans: 4, issues: 10 },
-    { date: 'Yesterday', scans: 6, issues: 14 },
-    { date: 'Today', scans: stats.completedScans, issues: stats.issuesDetected },
-  ];
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -214,35 +185,6 @@ const Dashboard: React.FC = () => {
         return <AssessmentIcon color="info" />;
       default:
         return <HistoryIcon />;
-    }
-  };
-
-  const handleQuickAction = (action: string) => {
-    switch (action) {
-      case 'new-project':
-        navigate('/projects');
-        break;
-      case 'run-scan':
-        if (projects.length > 0) {
-          // For quick action, perhaps scan the first project or open a selection dialog
-          // For now, let's try to scan the first project in the list
-          handleRunScan(projects[0], new MouseEvent('click') as any); // Cast to any for synthetic event
-        } else {
-          // Handle case where there are no projects, e.g., show a message or navigate to create project
-          navigate('/projects');
-        }
-        break;
-      case 'view-reports':
-        // This is generic, maybe navigate to a general reports page or open a project selection for reports
-        // For now, let's assume it means viewing reports for the first project if available
-        if (projects.length > 0) {
-          setSelectedProjectForReport(projects[0]);
-        } else {
-           navigate('/projects'); // Or show a message
-        }
-        break;
-      default:
-        break;
     }
   };
 
@@ -284,6 +226,10 @@ const Dashboard: React.FC = () => {
       setCurrentScanResultForDialog(detailedScanResults);
       setScanDetailLoading(false); // Stop loading, ScanResults will update
 
+      // Refresh dashboard data to show the new scan in Recent Scan Results
+      console.log('Scan completed, refreshing dashboard data...');
+      fetchData();
+
     } catch (error) {
       console.error(`Error during scan process for project ${project.name}:`, error);
       // It's good to have a user-facing error message here
@@ -300,7 +246,7 @@ const Dashboard: React.FC = () => {
   const handleViewDetails = (project: Project, e: React.MouseEvent) => {
     e.stopPropagation();
     console.log('Navigating to project details. Project ID:', project.ID, 'Project object:', project);
-    navigate(`/projects/${project.ID}`);
+    navigateWithScrollSave(`/projects/${project.ID}`);
   };
 
   const handleViewReport = (project: Project, e: React.MouseEvent) => {
@@ -331,6 +277,89 @@ const Dashboard: React.FC = () => {
   const handleCloseScanResultDialog = () => {
     setIsScanResultDialogOpen(false);
     setCurrentScanResultForDialog(null);
+  };
+
+  // Add new handler for running scan from Recent Scan Results
+  const handleRunScanFromResults = async (scan: ScanDashboardItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Find the project details for this scan
+    const project = projects.find(p => p.ID === scan.project_id);
+    if (!project) {
+      // If project not in current list, create a minimal project object
+      const projectFromScan: Project = {
+        ID: scan.project_id,
+        title: scan.project_name,
+        url: '', // Default empty URL since project is not in current list
+        name: scan.project_name,
+        status: 'active' as const,
+        CreatedAt: new Date().toISOString(),
+        UpdatedAt: new Date().toISOString(),
+        DeletedAt: null,
+        description: '',
+        user_id: '',
+        last_scan: '',
+        score: 0,
+      };
+      await handleRunScan(projectFromScan, e);
+    } else {
+      await handleRunScan(project, e);
+    }
+    
+    // Refresh data after scan to update Recent Scan Results
+    console.log('Scan from results completed, refreshing dashboard data...');
+    fetchData();
+  };
+
+  // Add new handler for viewing scan details from Recent Scan Results
+  const handleViewScanDetails = async (scan: ScanDashboardItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (scan.status !== 'completed') {
+      // If scan is not completed, just navigate to project page
+      navigateWithScrollSave(`/projects/${scan.project_id}`);
+      return;
+    }
+
+    // Open dialog and show loading
+    setIsScanResultDialogOpen(true);
+    setScanDetailLoading(true);
+    setCurrentScanResultForDialog(null);
+
+    try {
+      // Get fresh scan results for the URL from the project
+      const project = projects.find(p => p.ID === scan.project_id);
+      const scanUrl = project?.url;
+      if (!scanUrl) {
+        throw new Error('No URL available for scan');
+      }
+
+      console.log(`Fetching scan details for URL: ${scanUrl} from recent scan results`);
+      const detailedScanResults = await scannerService.scanUrl(scanUrl);
+      console.log('Scan details fetched for recent scan dialog:', detailedScanResults);
+      
+      setCurrentScanResultForDialog(detailedScanResults);
+    } catch (error) {
+      console.error(`Error fetching scan details for recent scan:`, error);
+      alert(`Failed to load scan details. Please try again.`);
+      setIsScanResultDialogOpen(false);
+    } finally {
+      setScanDetailLoading(false);
+    }
+  };
+
+  // Navigation helper that saves scroll position before navigating
+  const navigateWithScrollSave = (path: string) => {
+    // Save current scroll position to sessionStorage immediately
+    const currentPath = location.pathname;
+    const scrollY = window.scrollY;
+    if (scrollY > 0) {
+      const scrollPositions = JSON.parse(sessionStorage.getItem('scrollPositions') || '{}');
+      scrollPositions[currentPath] = scrollY;
+      sessionStorage.setItem('scrollPositions', JSON.stringify(scrollPositions));
+      console.log(`Saving scroll position before navigation: ${currentPath} -> ${scrollY}`);
+    }
+    navigate(path);
   };
 
   useEffect(() => {
@@ -381,145 +410,6 @@ const Dashboard: React.FC = () => {
         </Typography>
       </Paper>
 
-      <Typography variant="h5" sx={{ mb: 2 }}>Overview</Typography>
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Total Projects
-              </Typography>
-              <Typography variant="h3">{stats.totalProjects}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Active Projects
-              </Typography>
-              <Typography variant="h3" color="success.main">{stats.activeProjects}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Completed Scans
-              </Typography>
-              <Typography variant="h3" color="info.main">{stats.completedScans}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography color="text.secondary" gutterBottom>
-                Issues Detected
-              </Typography>
-              <Typography variant="h3" color="warning.main">{stats.issuesDetected}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Typography variant="h5" sx={{ mb: 2 }}>Quick Actions</Typography>
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={4}>
-          <Button 
-            fullWidth 
-            variant="contained" 
-            startIcon={<AddIcon />}
-            onClick={() => handleQuickAction('new-project')}
-            sx={{ p: 2 }}
-          >
-            Create New Project
-          </Button>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Button 
-            fullWidth 
-            variant="contained" 
-            color="secondary"
-            startIcon={<SearchIcon />}
-            onClick={() => handleQuickAction('run-scan')}
-            disabled={projects.length === 0}
-            sx={{ p: 2 }}
-          >
-            Run New Scan
-          </Button>
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <Button 
-            fullWidth 
-            variant="contained" 
-            color="info"
-            startIcon={<AssessmentIcon />}
-            onClick={() => handleQuickAction('view-reports')}
-            sx={{ p: 2 }}
-          >
-            View Reports
-          </Button>
-        </Grid>
-      </Grid>
-
-      <Typography variant="h5" sx={{ mb: 2 }}>Analytics</Typography>
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={4}>
-          <Card sx={{ height: '100%' }}>
-            <CardHeader title="Project Status" />
-            <CardContent>
-              <Box height={220} display="flex" alignItems="center" justifyContent="center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={projectStatusData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {projectStatusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-        
-        <Grid item xs={12} sm={6} md={8}>
-          <Card sx={{ height: '100%' }}>
-            <CardHeader title="Scan History" />
-            <CardContent>
-              <Box height={220}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={scanHistoryData}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="scans" stroke="#8884d8" name="Scans" />
-                    <Line type="monotone" dataKey="issues" stroke="#82ca9d" name="Issues" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -527,7 +417,7 @@ const Dashboard: React.FC = () => {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
-              onClick={() => navigate('/projects')}
+              onClick={() => navigateWithScrollSave('/projects')}
             >
               View All Projects
             </Button>
@@ -543,7 +433,7 @@ const Dashboard: React.FC = () => {
                     flexDirection: 'column',
                     cursor: 'pointer',
                   }}
-                  onClick={() => navigate(`/projects/${project.ID}`)}
+                  onClick={() => navigateWithScrollSave(`/projects/${project.ID}`)}
                 >
                   <CardContent>
                     <Typography variant="h6" component="div">
@@ -569,28 +459,12 @@ const Dashboard: React.FC = () => {
                     </Typography>
                   </CardContent>
                   <CardActions>
-                    <Tooltip title="Run Scan">
-                      <IconButton 
-                        size="small" 
-                        onClick={(e) => handleRunScan(project, e)}
-                      >
-                        <SearchIcon />
-                      </IconButton>
-                    </Tooltip>
                     <Tooltip title="View Details">
                       <IconButton 
                         size="small"
                         onClick={(e) => handleViewDetails(project, e)}
                       >
                         <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="View Compliance Report">
-                      <IconButton 
-                        size="small"
-                        onClick={(e) => handleViewReport(project, e)}
-                      >
-                        <AssessmentIcon />
                       </IconButton>
                     </Tooltip>
                   </CardActions>
@@ -647,19 +521,11 @@ const Dashboard: React.FC = () => {
                   <CardActions>
                     <Button 
                       size="small" 
-                      startIcon={<VisibilityIcon />}
-                      disabled={scan.status === 'in_progress' || scan.status === 'pending' || scan.status === 'failed'}
-                      onClick={() => navigate(`/projects/${scan.project_id}`)}
+                      startIcon={<AssessmentIcon />}
+                      disabled={scan.status !== 'completed'}
+                      onClick={(e) => handleViewScanDetails(scan, e)}
                     >
-                      View Details
-                    </Button>
-                    <Button 
-                      size="small" 
-                      startIcon={<RefreshIcon />}
-                      disabled={scan.status === 'in_progress'}
-                      onClick={() => navigate(`/projects/${scan.project_id}`)} // Consider making this trigger a new scan for this specific project scan entry
-                    >
-                      Run Again
+                      Scan Results
                     </Button>
                   </CardActions>
                 </Card>

@@ -20,8 +20,8 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Folder as ProjectIcon,
-  Group as TeamIcon,
   Logout as LogoutIcon,
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -47,8 +47,8 @@ const Layout: React.FC = () => {
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
+    { text: 'Analytics', icon: <AnalyticsIcon />, path: 'analytics' },
     { text: 'Projects', icon: <ProjectIcon />, path: 'projects' },
-    { text: 'Team', icon: <TeamIcon />, path: 'team' },
   ];
 
   const drawer = (

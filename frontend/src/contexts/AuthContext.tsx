@@ -51,9 +51,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('User data fetched successfully:', response.data);
       setUser(response.data);
       setIsAuthenticated(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Token validation failed:', error);
-      localStorage.removeItem('token');
+      // Only remove token if it's a proper 401 error, not network issues
+      if (error.response?.status === 401) {
+        console.log('Token invalid (401), removing from storage');
+        localStorage.removeItem('token');
+      }
       setUser(null);
       setIsAuthenticated(false);
     } finally {

@@ -16,6 +16,7 @@ import {
   Typography,
   CircularProgress,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -24,6 +25,8 @@ import {
   Refresh as RefreshIcon,
   Visibility as VisibilityIcon,
   Assessment as AssessmentIcon,
+  CloudDownload as CloudDownloadIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { projectService } from '../services/projectService';
 import { scannerService, ScanResult } from '../services/scannerService';
@@ -33,6 +36,8 @@ import { SimulationControls } from '../components/SimulationControls';
 import { SimulationPreview } from '../components/SimulationPreview';
 import { complianceService, ComplianceReport } from '../services/complianceService';
 import { ComplianceReport as ComplianceReportComponent } from '../components/ComplianceReport';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const SUGGESTED_TEST_URLS = [
   {
@@ -66,22 +71,36 @@ const Projects: React.FC = () => {
     url: '',
   });
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [scanningProject, setScanningProject] = useState<Project | null>(null);
   const [simulationIframe, setSimulationIframe] = useState<HTMLIFrameElement | null>(null);
   const [simulatingProject, setSimulatingProject] = useState<Project | null>(null);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
-  const [checkingCompliance, setCheckingCompliance] = useState<Project | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  
+  // New loading states
+  const [submittingForm, setSubmittingForm] = useState(false);
+  const [deletingProject, setDeletingProject] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [runningScans, setRunningScans] = useState<Set<string>>(new Set());
+  const [checkingComplianceIds, setCheckingComplianceIds] = useState<Set<string>>(new Set());
+
+  // State for download dialog
+  const [openDownloadDialog, setOpenDownloadDialog] = useState(false);
+  const [projectForDownload, setProjectForDownload] = useState<Project | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     console.log('Projects component mounted');
     fetchProjects();
   }, []);
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (isRefresh = false) => {
     console.log('=== Fetching Projects ===');
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       console.log('Making API call to get projects');
       const data = await projectService.getProjects();
       console.log('Projects fetched:', data);
@@ -92,7 +111,11 @@ const Projects: React.FC = () => {
       console.error('Failed to fetch projects:', err);
       setError('Failed to fetch projects');
     } finally {
-      setLoading(false);
+      if (isRefresh) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
@@ -130,6 +153,8 @@ const Projects: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
+      setSubmittingForm(true);
+      setError(null);
       if (editingProject) {
         await projectService.updateProject(editingProject.ID, formData);
       } else {
@@ -140,17 +165,23 @@ const Projects: React.FC = () => {
     } catch (err) {
       setError('Failed to save project');
       console.error(err);
+    } finally {
+      setSubmittingForm(false);
     }
   };
 
   const handleDelete = async (ID: string) => {
     if (window.confirm('Are you sure you want to delete this project?')) {
       try {
+        setDeletingProject(ID);
+        setError(null);
         await projectService.deleteProject(ID);
         fetchProjects();
       } catch (err) {
         setError('Failed to delete project');
         console.error(err);
+      } finally {
+        setDeletingProject(null);
       }
     }
   };
@@ -174,7 +205,8 @@ const Projects: React.FC = () => {
       console.log('- URL:', project.url);
       console.log('- Title:', project.title);
 
-      setScanningProject(project);
+      // Add to running scans set
+      setRunningScans(prev => new Set(prev).add(ID));
       setError(null);
 
       // First update the project scan status
@@ -194,7 +226,12 @@ const Projects: React.FC = () => {
       console.error('Failed to run scan:', err);
       setError('Failed to run scan');
     } finally {
-      setScanningProject(null);
+      // Remove from running scans set
+      setRunningScans(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(ID);
+        return newSet;
+      });
     }
   };
 
@@ -235,14 +272,153 @@ const Projects: React.FC = () => {
 
   const handleCheckCompliance = async (project: Project) => {
     try {
-      setCheckingCompliance(project);
+      // Add to checking compliance set
+      setCheckingComplianceIds(prev => new Set(prev).add(project.ID));
+      setError(null);
       const report = await complianceService.generateReport(project.ID);
       setComplianceReport(report);
     } catch (err) {
       console.error('Failed to generate compliance report:', err);
       setError('Failed to generate compliance report');
     } finally {
-      setCheckingCompliance(null);
+      // Remove from checking compliance set
+      setCheckingComplianceIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(project.ID);
+        return newSet;
+      });
+    }
+  };
+
+  const handleViewScanResults = async (project: Project) => {
+    try {
+      // Add to running scans set to show loading indicator (optional, or use a new state)
+      setRunningScans(prev => new Set(prev).add(project.ID));
+      const results = await scannerService.scanUrl(project.url);
+      setScanResult(results);
+    } catch (err) {
+      console.error('Failed to run scan for viewing results:', err);
+      setError('Failed to run scan: ' + (err instanceof Error ? err.message : String(err)));
+      setScanResult(null); // Clear previous results on error
+    } finally {
+      setRunningScans(prev => {
+        const next = new Set(prev);
+        next.delete(project.ID);
+        return next;
+      });
+    }
+  };
+
+  const handleOpenDownloadDialog = (project: Project) => {
+    setProjectForDownload(project);
+    setOpenDownloadDialog(true);
+  };
+
+  const handleCloseDownloadDialog = () => {
+    setOpenDownloadDialog(false);
+    setProjectForDownload(null);
+  };
+
+  const handleDownloadJson = async () => {
+    if (!projectForDownload) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const results = await scannerService.scanUrl(projectForDownload.url);
+      const jsonString = JSON.stringify(results, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${projectForDownload.name}_scan_results.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      handleCloseDownloadDialog();
+    } catch (err) {
+      console.error('Failed to download JSON:', err);
+      setError('Failed to download JSON results: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!projectForDownload) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const results = await scannerService.scanUrl(projectForDownload.url);
+      if (!results) {
+        setError('No scan results available to generate PDF.');
+        setDownloading(false);
+        return;
+      }
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      let yPos = margin;
+
+      // Title
+      doc.setFontSize(18);
+      doc.text('Accessibility Scan Report', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 10;
+
+      // Project Info
+      doc.setFontSize(12);
+      doc.text(`Project: ${projectForDownload.name}`, margin, yPos);
+      yPos += 7;
+      doc.text(`URL: ${results.url}`, margin, yPos);
+      yPos += 7;
+      doc.text(`Scan Date: ${new Date(results.timestamp).toLocaleString()}`, margin, yPos);
+      yPos += 10;
+
+      // Summary Table
+      const summaryData = [
+        ['Violations', results.violations.length.toString()],
+        ['Passes', results.passes.toString()],
+      ];
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Category', 'Count']],
+        body: summaryData,
+        theme: 'grid',
+        headStyles: { fillColor: [22, 160, 133] },
+        margin: { left: margin, right: margin },
+      });
+      yPos = (doc as any).lastAutoTable.finalY + 10;
+
+      // Violations Details
+      if (results.violations.length > 0) {
+        doc.setFontSize(14);
+        doc.text('Violations Details', margin, yPos);
+        yPos += 8;
+        const violationData = results.violations.map(v => [
+          v.id,
+          v.impact,
+          v.description,
+          v.nodes.length.toString(),
+        ]);
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Rule ID', 'Impact', 'Description', 'Nodes']],
+          body: violationData,
+          theme: 'striped',
+          headStyles: { fillColor: [192, 57, 43] }, // Red for violations
+          margin: { left: margin, right: margin },
+        });
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+      }
+      
+      doc.save(`${projectForDownload.name}_scan_report.pdf`);
+      handleCloseDownloadDialog();
+
+    } catch (err) {
+       console.error('Failed to download PDF:', err);
+       setError('Failed to download PDF results: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -260,14 +436,25 @@ const Projects: React.FC = () => {
         <Typography variant="h4" component="h1">
           Projects
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-        >
-          New Project
-        </Button>
+        <Box display="flex" gap={2}>
+          <Tooltip title="Refresh projects">
+            <IconButton
+              onClick={() => fetchProjects(true)}
+              disabled={refreshing}
+              color="primary"
+            >
+              {refreshing ? <CircularProgress size={24} /> : <RefreshIcon />}
+            </IconButton>
+          </Tooltip>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+          >
+            New Project
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -300,41 +487,77 @@ const Projects: React.FC = () => {
                 </Box>
               </CardContent>
               <CardActions>
-                <IconButton
-                  size="small"
-                  onClick={() => handleOpenDialog(project)}
-                  aria-label="edit"
-                >
-                  <EditIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleDelete(project.ID)}
-                  aria-label="delete"
-                >
-                  <DeleteIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleRunScan(project.ID)}
-                  aria-label="scan"
-                >
-                  <RefreshIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleStartSimulation(project)}
-                  aria-label="simulate"
-                >
-                  <VisibilityIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleCheckCompliance(project)}
-                  aria-label="check compliance"
-                >
-                  <AssessmentIcon />
-                </IconButton>
+                <Tooltip title="Edit project">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleOpenDialog(project)}
+                    aria-label="edit"
+                    disabled={deletingProject === project.ID || runningScans.has(project.ID) || checkingComplianceIds.has(project.ID)}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Delete project">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDelete(project.ID)}
+                    aria-label="delete"
+                    disabled={deletingProject === project.ID || runningScans.has(project.ID) || checkingComplianceIds.has(project.ID)}
+                  >
+                    {deletingProject === project.ID ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <DeleteIcon />
+                    )}
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Run accessibility scan">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleRunScan(project.ID)}
+                    aria-label="scan"
+                    disabled={deletingProject === project.ID || runningScans.has(project.ID) || checkingComplianceIds.has(project.ID)}
+                  >
+                    {runningScans.has(project.ID) ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <RefreshIcon />
+                    )}
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Preview website">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleStartSimulation(project)}
+                    aria-label="simulate"
+                    disabled={deletingProject === project.ID || runningScans.has(project.ID) || checkingComplianceIds.has(project.ID)}
+                  >
+                    <VisibilityIcon />
+                  </IconButton>
+                </Tooltip>
+                
+                <Tooltip title="Check WCAG compliance">
+                  <IconButton 
+                      size="small" 
+                      onClick={() => handleCheckCompliance(project)}
+                      aria-label="check compliance"
+                      disabled={deletingProject === project.ID || runningScans.has(project.ID) || checkingComplianceIds.has(project.ID)}
+                  >
+                      {checkingComplianceIds.has(project.ID) ? (
+                        <CircularProgress size={20} />
+                      ) : (
+                        <AssessmentIcon />
+                      )}
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Download Scan Results">
+                  <IconButton size="small" onClick={() => handleOpenDownloadDialog(project)}>
+                    <CloudDownloadIcon />
+                  </IconButton>
+                </Tooltip>
               </CardActions>
             </Card>
           </Grid>
@@ -379,9 +602,17 @@ const Projects: React.FC = () => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button onClick={handleSubmit} color="primary" variant="contained">
-            {editingProject ? 'Update' : 'Create'}
+          <Button onClick={handleCloseDialog} disabled={submittingForm}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit} 
+            color="primary" 
+            variant="contained"
+            disabled={submittingForm}
+            startIcon={submittingForm ? <CircularProgress size={16} /> : undefined}
+          >
+            {submittingForm ? 'Saving...' : (editingProject ? 'Update' : 'Create')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -390,13 +621,23 @@ const Projects: React.FC = () => {
         <Dialog
           open={!!scanResult}
           onClose={() => setScanResult(null)}
-          maxWidth="md"
+          maxWidth="xl"
           fullWidth
         >
-          <DialogContent>
-            <ScanResults
-              scanResult={scanResult}
-              onClose={() => setScanResult(null)}
+          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            Scan Results for {scanResult?.url}
+            <IconButton
+              aria-label="close"
+              onClick={() => setScanResult(null)}
+              sx={{ position: 'absolute', right: 8, top: 8 }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent sx={{ p: scanResult ? 0 : 2 }}>
+            <ScanResults 
+              scanResult={scanResult} 
+              loading={scanResult === null && projects.some(p => runningScans.has(p.ID))}
             />
           </DialogContent>
         </Dialog>
@@ -487,6 +728,38 @@ const Projects: React.FC = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Download Options Dialog */}
+      <Dialog open={openDownloadDialog} onClose={handleCloseDownloadDialog}>
+        <DialogTitle>Download Scan Results for {projectForDownload?.name}</DialogTitle>
+        <DialogContent>
+          <Typography>Choose a format to download:</Typography>
+          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDownloadDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDownloadJson} 
+            color="primary" 
+            variant="contained"
+            disabled={downloading}
+            startIcon={downloading ? <CircularProgress size={20} /> : null}
+          >
+            Download JSON
+          </Button>
+          <Button 
+            onClick={handleDownloadPdf} 
+            color="secondary" 
+            variant="contained"
+            disabled={downloading}
+            startIcon={downloading ? <CircularProgress size={20} /> : null}
+          >
+            Download PDF
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
